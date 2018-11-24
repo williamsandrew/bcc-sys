@@ -26,7 +26,12 @@ where
         let byte_index = index / 8;
         let byte = self.storage.as_ref()[byte_index];
 
-        let bit_index = index % 8;
+        let bit_index = if cfg!(target_endian = "big") {
+            7 - (index % 8)
+        } else {
+            index % 8
+        };
+
         let mask = 1 << bit_index;
 
         byte & mask == mask
@@ -39,9 +44,13 @@ where
         let byte_index = index / 8;
         let byte = &mut self.storage.as_mut()[byte_index];
 
-        let bit_index = index % 8;
-        let mask = 1 << bit_index;
+        let bit_index = if cfg!(target_endian = "big") {
+            7 - (index % 8)
+        } else {
+            index % 8
+        };
 
+        let mask = 1 << bit_index;
         if val {
             *byte |= mask;
         } else {
@@ -59,7 +68,12 @@ where
 
         for i in 0..(bit_width as usize) {
             if self.get_bit(i + bit_offset) {
-                val |= 1 << i;
+                let index = if cfg!(target_endian = "big") {
+                    bit_width as usize - 1 - i
+                } else {
+                    i
+                };
+                val |= 1 << index;
             }
         }
 
@@ -75,7 +89,12 @@ where
         for i in 0..(bit_width as usize) {
             let mask = 1 << i;
             let val_bit_is_set = val & mask == mask;
-            self.set_bit(i + bit_offset, val_bit_is_set);
+            let index = if cfg!(target_endian = "big") {
+                bit_width as usize - 1 - i
+            } else {
+                i
+            };
+            self.set_bit(index + bit_offset, val_bit_is_set);
         }
     }
 }
@@ -223,6 +242,8 @@ pub const BPF_DEVCG_DEV_CHAR: u32 = 2;
 pub const LOG_BUF_SIZE: u32 = 65536;
 pub const BPF_FN_PREFIX: &'static [u8; 9usize] = b".bpf.fn.\0";
 pub const STT_GNU_IFUNC: u32 = 10;
+pub type __uint32_t = ::std::os::raw::c_uint;
+pub type __uint64_t = ::std::os::raw::c_ulong;
 pub type __pid_t = ::std::os::raw::c_int;
 pub type pid_t = __pid_t;
 extern "C" {
@@ -572,6 +593,49 @@ fn bindgen_test_layout_bpf_lpm_trie_key() {
         )
     );
 }
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
+pub struct bpf_cgroup_storage_key {
+    pub cgroup_inode_id: __u64,
+    pub attach_type: __u32,
+}
+#[test]
+fn bindgen_test_layout_bpf_cgroup_storage_key() {
+    assert_eq!(
+        ::std::mem::size_of::<bpf_cgroup_storage_key>(),
+        16usize,
+        concat!("Size of: ", stringify!(bpf_cgroup_storage_key))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<bpf_cgroup_storage_key>(),
+        8usize,
+        concat!("Alignment of ", stringify!(bpf_cgroup_storage_key))
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<bpf_cgroup_storage_key>())).cgroup_inode_id as *const _ as usize
+        },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(bpf_cgroup_storage_key),
+            "::",
+            stringify!(cgroup_inode_id)
+        )
+    );
+    assert_eq!(
+        unsafe {
+            &(*(::std::ptr::null::<bpf_cgroup_storage_key>())).attach_type as *const _ as usize
+        },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(bpf_cgroup_storage_key),
+            "::",
+            stringify!(attach_type)
+        )
+    );
+}
 pub const bpf_cmd_BPF_MAP_CREATE: bpf_cmd = 0;
 pub const bpf_cmd_BPF_MAP_LOOKUP_ELEM: bpf_cmd = 1;
 pub const bpf_cmd_BPF_MAP_UPDATE_ELEM: bpf_cmd = 2;
@@ -613,6 +677,8 @@ pub const bpf_map_type_BPF_MAP_TYPE_SOCKMAP: bpf_map_type = 15;
 pub const bpf_map_type_BPF_MAP_TYPE_CPUMAP: bpf_map_type = 16;
 pub const bpf_map_type_BPF_MAP_TYPE_XSKMAP: bpf_map_type = 17;
 pub const bpf_map_type_BPF_MAP_TYPE_SOCKHASH: bpf_map_type = 18;
+pub const bpf_map_type_BPF_MAP_TYPE_CGROUP_STORAGE: bpf_map_type = 19;
+pub const bpf_map_type_BPF_MAP_TYPE_REUSEPORT_SOCKARRAY: bpf_map_type = 20;
 pub type bpf_map_type = u32;
 pub const bpf_prog_type_BPF_PROG_TYPE_UNSPEC: bpf_prog_type = 0;
 pub const bpf_prog_type_BPF_PROG_TYPE_SOCKET_FILTER: bpf_prog_type = 1;
@@ -635,6 +701,7 @@ pub const bpf_prog_type_BPF_PROG_TYPE_RAW_TRACEPOINT: bpf_prog_type = 17;
 pub const bpf_prog_type_BPF_PROG_TYPE_CGROUP_SOCK_ADDR: bpf_prog_type = 18;
 pub const bpf_prog_type_BPF_PROG_TYPE_LWT_SEG6LOCAL: bpf_prog_type = 19;
 pub const bpf_prog_type_BPF_PROG_TYPE_LIRC_MODE2: bpf_prog_type = 20;
+pub const bpf_prog_type_BPF_PROG_TYPE_SK_REUSEPORT: bpf_prog_type = 21;
 pub type bpf_prog_type = u32;
 pub const bpf_attach_type_BPF_CGROUP_INET_INGRESS: bpf_attach_type = 0;
 pub const bpf_attach_type_BPF_CGROUP_INET_EGRESS: bpf_attach_type = 1;
@@ -2148,7 +2215,12 @@ pub const bpf_func_id_BPF_FUNC_lwt_seg6_adjust_srh: bpf_func_id = 75;
 pub const bpf_func_id_BPF_FUNC_lwt_seg6_action: bpf_func_id = 76;
 pub const bpf_func_id_BPF_FUNC_rc_repeat: bpf_func_id = 77;
 pub const bpf_func_id_BPF_FUNC_rc_keydown: bpf_func_id = 78;
-pub const bpf_func_id___BPF_FUNC_MAX_ID: bpf_func_id = 79;
+pub const bpf_func_id_BPF_FUNC_skb_cgroup_id: bpf_func_id = 79;
+pub const bpf_func_id_BPF_FUNC_get_current_cgroup_id: bpf_func_id = 80;
+pub const bpf_func_id_BPF_FUNC_get_local_storage: bpf_func_id = 81;
+pub const bpf_func_id_BPF_FUNC_sk_select_reuseport: bpf_func_id = 82;
+pub const bpf_func_id_BPF_FUNC_skb_ancestor_cgroup_id: bpf_func_id = 83;
+pub const bpf_func_id___BPF_FUNC_MAX_ID: bpf_func_id = 84;
 pub type bpf_func_id = u32;
 pub const bpf_adj_room_mode_BPF_ADJ_ROOM_NET: bpf_adj_room_mode = 0;
 pub type bpf_adj_room_mode = u32;
@@ -2606,6 +2678,7 @@ pub struct bpf_xfrm_state {
     pub reqid: __u32,
     pub spi: __u32,
     pub family: __u16,
+    pub ext: __u16,
     pub __bindgen_anon_1: bpf_xfrm_state__bindgen_ty_1,
 }
 #[repr(C)]
@@ -2706,6 +2779,16 @@ fn bindgen_test_layout_bpf_xfrm_state() {
             stringify!(family)
         )
     );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<bpf_xfrm_state>())).ext as *const _ as usize },
+        10usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(bpf_xfrm_state),
+            "::",
+            stringify!(ext)
+        )
+    );
 }
 impl Default for bpf_xfrm_state {
     fn default() -> Self {
@@ -2714,11 +2797,7 @@ impl Default for bpf_xfrm_state {
 }
 impl ::std::fmt::Debug for bpf_xfrm_state {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(
-            f,
-            "bpf_xfrm_state {{ reqid: {:?}, spi: {:?}, family: {:?}, __bindgen_anon_1: {:?} }}",
-            self.reqid, self.spi, self.family, self.__bindgen_anon_1
-        )
+        write ! ( f , "bpf_xfrm_state {{ reqid: {:?}, spi: {:?}, family: {:?}, ext: {:?}, __bindgen_anon_1: {:?} }}" , self . reqid , self . spi , self . family , self . ext , self . __bindgen_anon_1 )
     }
 }
 pub const bpf_ret_code_BPF_OK: bpf_ret_code = 0;
@@ -3185,6 +3264,7 @@ pub struct bpf_map_info {
     pub map_flags: __u32,
     pub name: [::std::os::raw::c_char; 16usize],
     pub ifindex: __u32,
+    pub _bitfield_1: __BindgenBitfieldUnit<[u8; 4usize], u8>,
     pub netns_dev: __u64,
     pub netns_ino: __u64,
     pub btf_id: __u32,
@@ -3333,6 +3413,14 @@ fn bindgen_test_layout_bpf_map_info() {
             stringify!(btf_value_type_id)
         )
     );
+}
+impl bpf_map_info {
+    #[inline]
+    pub fn new_bitfield_1() -> __BindgenBitfieldUnit<[u8; 4usize], u8> {
+        let mut __bindgen_bitfield_unit: __BindgenBitfieldUnit<[u8; 4usize], u8> =
+            Default::default();
+        __bindgen_bitfield_unit
+    }
 }
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
@@ -3980,6 +4068,7 @@ pub const BPF_SOCK_OPS_BASE_RTT: _bindgen_ty_2 = 7;
 pub const BPF_SOCK_OPS_RTO_CB: _bindgen_ty_2 = 8;
 pub const BPF_SOCK_OPS_RETRANS_CB: _bindgen_ty_2 = 9;
 pub const BPF_SOCK_OPS_STATE_CB: _bindgen_ty_2 = 10;
+pub const BPF_SOCK_OPS_TCP_LISTEN_CB: _bindgen_ty_2 = 11;
 pub type _bindgen_ty_2 = u32;
 pub const BPF_TCP_ESTABLISHED: _bindgen_ty_3 = 1;
 pub const BPF_TCP_SYN_SENT: _bindgen_ty_3 = 2;
@@ -4095,6 +4184,16 @@ fn bindgen_test_layout_bpf_cgroup_dev_ctx() {
         )
     );
 }
+pub const BPF_FIB_LKUP_RET_SUCCESS: _bindgen_ty_4 = 0;
+pub const BPF_FIB_LKUP_RET_BLACKHOLE: _bindgen_ty_4 = 1;
+pub const BPF_FIB_LKUP_RET_UNREACHABLE: _bindgen_ty_4 = 2;
+pub const BPF_FIB_LKUP_RET_PROHIBIT: _bindgen_ty_4 = 3;
+pub const BPF_FIB_LKUP_RET_NOT_FWDED: _bindgen_ty_4 = 4;
+pub const BPF_FIB_LKUP_RET_FWD_DISABLED: _bindgen_ty_4 = 5;
+pub const BPF_FIB_LKUP_RET_UNSUPP_LWT: _bindgen_ty_4 = 6;
+pub const BPF_FIB_LKUP_RET_NO_NEIGH: _bindgen_ty_4 = 7;
+pub const BPF_FIB_LKUP_RET_FRAG_NEEDED: _bindgen_ty_4 = 8;
+pub type _bindgen_ty_4 = u32;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct bpf_fib_lookup {
@@ -4116,7 +4215,7 @@ pub struct bpf_fib_lookup {
 #[derive(Copy, Clone)]
 pub union bpf_fib_lookup__bindgen_ty_1 {
     pub tos: __u8,
-    pub flowlabel: __be32,
+    pub flowinfo: __be32,
     pub rt_metric: __u32,
     _bindgen_union_align: u32,
 }
@@ -4146,14 +4245,14 @@ fn bindgen_test_layout_bpf_fib_lookup__bindgen_ty_1() {
     );
     assert_eq!(
         unsafe {
-            &(*(::std::ptr::null::<bpf_fib_lookup__bindgen_ty_1>())).flowlabel as *const _ as usize
+            &(*(::std::ptr::null::<bpf_fib_lookup__bindgen_ty_1>())).flowinfo as *const _ as usize
         },
         0usize,
         concat!(
             "Offset of field: ",
             stringify!(bpf_fib_lookup__bindgen_ty_1),
             "::",
-            stringify!(flowlabel)
+            stringify!(flowinfo)
         )
     );
     assert_eq!(
